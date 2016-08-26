@@ -1,6 +1,7 @@
 import RPi.GPIO as GPIO
 import time
 import sys
+import signal
 
 # Support for keyboard input
 import select
@@ -202,12 +203,12 @@ class PlaySide(object):
         self.motor.initialize()
 
 
-
 def keyboardInputAvailable():
     return select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
 
 
 def shutdown():
+    print 'GAME: shutting down...'
     MOTORS[0].changeSpeed(MOTORS[0].MIN_PERCENTAGE)
     MOTORS[1].changeSpeed(MOTORS[1].MIN_PERCENTAGE)
     MOTORS[0].shutdown()
@@ -217,6 +218,14 @@ def shutdown():
 
 def scoreChanged(playSide):
     sendWebsocketMessage(DeviceScoreChangeEvent(playSide.fanDevice))
+
+
+def sigterm_handler(signum, frame):
+    print 'Shutting down...'
+    shutdown()
+
+signal.signal(signal.SIGTERM, handler)
+
 
 GPIO.setmode(GPIO.BCM)
 
@@ -242,7 +251,6 @@ GPIO.setup(GPIO_SWITCH_2, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 PLAY_SIDES = [PlaySide(MOTORS[0], fans[0], GPIO_PIN_PIR_1, GPIO_SWITCH_1), PlaySide(
     MOTORS[1], fans[1], GPIO_PIN_PIR_2, GPIO_SWITCH_2)]
 
-try:
     print "INIT: starting gpio version:" + GPIO.VERSION
     server_socket = None
     PLAY_SIDES[0].motor.initialize()
@@ -322,18 +330,11 @@ try:
                 ws.on_open = on_open
                 # 'run_forever' is a lie, like the cake. It actually exits when all sockets have closed.
                 ws.run_forever()
+            except KeyboardInterrupt:
+                print "GAME: keyboard interrupt received."
+                shutdown()
             except:
                 e = sys.exc_info()[1]
                 print e
                 print "SOCKET: Reconnecting..."
                 time.sleep(20)
-
-except KeyboardInterrupt:
-    print "GAME: keyboard interrupt shutting down"
-    PLAY_SIDES[0].motor.shutdown()
-    PLAY_SIDES[1].motor.shutdown()
-finally:
-    shutdown()
-
-print "GAME: final shutdown and cleanup"
-shutdown()
